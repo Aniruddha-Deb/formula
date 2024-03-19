@@ -178,7 +178,7 @@ struct FunctionDefinition : ASTNode {
 
 std::queue<Token> tokens;
 FunctionDefinition curr_fd;
-std::queue<unique_ptr<Expression>> expr_queue;
+std::stack<unique_ptr<Expression>> expr_stack;
 std::vector<FunctionDefinition> definitions;
 
 int tokenize(const string& input) {
@@ -300,12 +300,12 @@ optional<Token> pop() {
 }
 
 optional<unique_ptr<Expression>> pop_expr() {
-    if (expr_queue.empty()) {
+    if (expr_stack.empty()) {
         err_expr_queue_empty();
         return {};
     }
-    unique_ptr<Expression> e = std::move(expr_queue.front());
-    expr_queue.pop();
+    unique_ptr<Expression> e = std::move(expr_stack.top());
+    expr_stack.pop();
     return e;
 }
 
@@ -353,21 +353,20 @@ bool parse_func_call_expr() {
             fae->name = get<string>(name.data);
             while (!popif(RBRACKET)) {
                 if (!parse_expr()) return false;
-                fae->parameters.push_back(std::move(expr_queue.front()));
-                expr_queue.pop();
+                fae->parameters.push_back(std::move(pop_expr().value()));
 
                 if (!(popif(COMMA) || peekif(RBRACKET))) {
                     return err_msg("Expected token , or ), got " + peek()->to_string());
                 }
             }
-            expr_queue.push(std::move(fae));
+            expr_stack.push(std::move(fae));
         }
         else {
-            expr_queue.push(make_unique<Identifier>(get<string>(name.data)));
+            expr_stack.push(make_unique<Identifier>(get<string>(name.data)));
         }
     }
     else if (peekif(NUMBER)) {
-        expr_queue.push(make_unique<IntLiteral>(get<int>(pop().value().data)));
+        expr_stack.push(make_unique<IntLiteral>(get<int>(pop().value().data)));
     }
     else {
         return err_msg("Expected number, identifier or (, got " + peek()->to_string());
@@ -386,10 +385,10 @@ bool parse_mul_div_expr() {
     }
     else if (peekif(STAR) || peekif(SLASH)) {
         Operator op = pop().value().type == STAR ? MUL : DIV;
-        if (!parse_expr()) return false;
+        if (!parse_mul_div_expr()) return false;
         unique_ptr<Expression> e1 = pop_expr().value();
         unique_ptr<Expression> e2 = pop_expr().value();
-        expr_queue.push(make_unique<BinaryExpression>(e1, op, e2));
+        expr_stack.push(make_unique<BinaryExpression>(e2, op, e1));
     }
     else {
         return err_msg("Expected ),;,,,+,-,*,/, got " + peek()->to_string());
@@ -412,7 +411,7 @@ bool parse_expr() {
         if (!parse_expr()) return false;
         unique_ptr<Expression> e1 = pop_expr().value();
         unique_ptr<Expression> e2 = pop_expr().value();
-        expr_queue.push(make_unique<BinaryExpression>(e1, op, e2));
+        expr_stack.push(make_unique<BinaryExpression>(e2, op, e1));
     }
     else {
         return err_msg("Expected ),;,,,+,-, got " + peek()->to_string());
