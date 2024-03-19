@@ -177,14 +177,26 @@ struct FunctionApplicationExpression : Expression {
         return ret;
     }
 
+    /*
+     * sub sp, sp, #16
+     * stp	x29, x30, [sp]
+     * mov w0, #5
+     * bl _func
+     * ldp	x29, x30, [sp]
+     * add sp, sp, #16
+     */
     string code_gen(string pad) {
         stringstream s;
+        s << "sub sp, sp, #16\n" << pad 
+          << "stp x29, x30, [sp]\n" << pad;
         for (int i=0; i<parameters.size(); i++) {
             unique_ptr<Expression>& expr = parameters[i];
             s << expr->code_gen(pad) << "\n" << pad;
             s << "mov w" << i+1 << ", w8\n" << pad;
         }
-        s << "b _" << name;
+        s << "bl _" << name << "\n" << pad;
+        s << "ldp x29, x30, [sp]\n" << pad
+          << "add sp, sp, #16";
         return s.str();
     }
 };
@@ -214,8 +226,11 @@ struct FunctionDefinition : ASTNode {
 
     string code_gen(string pad) {
         stringstream s;
-        s << "_" << name << ":\n"
-          << "    " + value->code_gen("    ") << "\n    ret\n\n";
+        s << "    .globl _" << name << "\n    .p2align 2\n"
+          << "_" << name << ":\n"
+          << "    " << value->code_gen("    ") << "\n"
+          // << "    " << "mov w0, w8\n"
+          << "    " << "ret\n";
         return s.str();
     }
 };
@@ -521,8 +536,6 @@ int main(int argc, char** argv) {
     parse();
 
     cout << "    .section    __TEXT,__text,regular,pure_instructions" << endl;
-    cout << "    .globl  _main" << endl;
-    cout << "    .p2align    2" << endl;
 
     for (auto& def : definitions) {
         cout << def.code_gen("") << endl;
