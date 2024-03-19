@@ -27,22 +27,20 @@ enum TokenType {
 };
 
 string toktype_to_str(TokenType type) {
-    string str = "";
     switch(type) {
-        case NUMBER: str = "NUMBER"; break;
-        case IDENTIFIER: str = "IDENTIFIER"; break;
-        case LBRACKET: str = "("; break;
-        case RBRACKET: str = ")"; break;
-        case SEMICOLON: str = ";"; break;
-        case DEF: str = "def"; break;
-        case EQ: str = "="; break;
-        case PLUS: str = "+"; break;
-        case MINUS: str = "-"; break;
-        case STAR: str = "*"; break;
-        case SLASH: str = "/"; break;
-        case COMMA: str = ";"; break;
+        case NUMBER: return "NUMBER";
+        case IDENTIFIER: return "IDENTIFIER";
+        case LBRACKET: return "(";
+        case RBRACKET: return ")";
+        case SEMICOLON: return ";";
+        case DEF: return "def";
+        case EQ: return "=";
+        case PLUS: return "+";
+        case MINUS: return "-";
+        case STAR: return "*";
+        case SLASH: return "/";
+        case COMMA: return ";";
     }
-    return str;
 }
 
 union TokenData {
@@ -80,9 +78,21 @@ enum Operator {
     ADD, SUB, MUL, DIV
 };
 
-struct ASTNode {};
+string op2str(Operator op) {
+    switch(op) {
+        case ADD: return "ADD";
+        case SUB: return "SUB";
+        case MUL: return "MUL";
+        case DIV: return "DIV";
+    }
+}
 
-struct Expression : ASTNode {};
+struct ASTNode {
+    virtual string to_string(string pad) {}
+};
+
+struct Expression : ASTNode {
+};
 
 struct NullExpression : Expression {};
 
@@ -95,6 +105,12 @@ struct BinaryExpression : Expression {
         lhs{std::move(_lhs)},
         op{_op},
         rhs{std::move(_rhs)} {}
+    
+    string to_string(string pad) {
+        return op2str(op) + "\n" + 
+               pad + "`- lhs: " + lhs->to_string(pad + "|  ") + "\n" +
+               pad + "`- rhs: " + rhs->to_string(pad + "   ");
+    }
 
 };
 
@@ -102,12 +118,20 @@ struct IntLiteral : Expression {
     int value;
 
     IntLiteral(int _value) : value(_value) {}
+
+    string to_string(string pad) {
+        return std::to_string(value);
+    }
 };
 
 struct Identifier : Expression {
     string value;
 
     Identifier(string _value) : value(_value) {}
+
+    string to_string(string pad) {
+        return value;
+    }
 };
 
 struct FunctionApplicationExpression : Expression {
@@ -115,6 +139,17 @@ struct FunctionApplicationExpression : Expression {
     vector<unique_ptr<Expression>> parameters;
 
     FunctionApplicationExpression() {}
+
+    string to_string(string pad) {
+        string ret = name;
+        for (int i=0; i<parameters.size()-1; i++) {
+            ret += "\n" + pad + "`- " + parameters[i]->to_string(pad + "|  ");
+        }
+        if (!parameters.empty()) {
+            ret += "\n" + pad + "`- " + parameters[parameters.size()-1]->to_string(pad + "   ");
+        }
+        return ret;
+    }
 };
 
 struct FunctionDefinition : ASTNode {
@@ -128,6 +163,17 @@ struct FunctionDefinition : ASTNode {
         value(std::move(_value)) {}
 
     FunctionDefinition() {}
+
+    string to_string(string pad) {
+        string ret = name + "(";
+        for (string& param : params) {
+            ret += param + ",";
+        }
+        if (ret[ret.size()-1] == ',') ret[ret.size()-1] = ')';
+        else ret += ")";
+        ret += "\n" + pad + "`- " + value->to_string(pad + "   ");
+        return ret;
+    }
 };
 
 std::queue<Token> tokens;
@@ -411,6 +457,7 @@ int main(int argc, char** argv) {
 
     if (argc != 2) {
         cout << "Usage: formula <filename>" << endl;
+        return 0;
     }
 
     std::ifstream t(argv[1]);
@@ -419,5 +466,11 @@ int main(int argc, char** argv) {
 
     tokenize(buffer.str());
     cout << parse() << endl;
+
+    for (auto& def : definitions) {
+        cout << def.to_string("") << endl;
+    }
+
+    return 0;
 
 }
