@@ -26,6 +26,25 @@ enum TokenType {
     COMMA
 };
 
+string toktype_to_str(TokenType type) {
+    string str = "";
+    switch(type) {
+        case NUMBER: str = "NUMBER"; break;
+        case IDENTIFIER: str = "IDENTIFIER"; break;
+        case LBRACKET: str = "("; break;
+        case RBRACKET: str = ")"; break;
+        case SEMICOLON: str = ";"; break;
+        case DEF: str = "def"; break;
+        case EQ: str = "="; break;
+        case PLUS: str = "+"; break;
+        case MINUS: str = "-"; break;
+        case STAR: str = "*"; break;
+        case SLASH: str = "/"; break;
+        case COMMA: str = ";"; break;
+    }
+    return str;
+}
+
 union TokenData {
     const char* id;
     int num;
@@ -33,7 +52,7 @@ union TokenData {
 
 struct Token {
     TokenType type;
-    TokenData data;
+    variant<int, string> data;
     int line_no;
     int col_no;
 
@@ -43,33 +62,16 @@ struct Token {
     Token(TokenType _type, int _line_no, int _col_no) : type{_type}, data{0},
         line_no{_line_no}, col_no{_col_no} {}
 
-    Token(TokenType _type, const char* _data, int _line_no, int _col_no) : 
-        type{_type}, line_no{_line_no}, col_no{_col_no} {
-        data.id = _data;
-    }
+    Token(TokenType _type, string _data, int _line_no, int _col_no) : 
+        type{_type}, line_no{_line_no}, col_no{_col_no}, data{_data} {}
+
     Token(TokenType _type, int _data, int _line_no, int _col_no) : 
-        type{_type}, line_no{_line_no}, col_no{_col_no} {
-        data.num = _data;
-    }
+        type{_type}, line_no{_line_no}, col_no{_col_no}, data{_data} {}
 
     string to_string() {
-        string str = "";
-        switch(type) {
-            case NUMBER: str = "NUMBER"; break;
-            case IDENTIFIER: str = "IDENTIFIER"; break;
-            case LBRACKET: str = "LBRACKET"; break;
-            case RBRACKET: str = "RBRACKET"; break;
-            case SEMICOLON: str = "SEMICOLON"; break;
-            case DEF: str = "DEF"; break;
-            case EQ: str = "EQ"; break;
-            case PLUS: str = "PLUS"; break;
-            case MINUS: str = "MINUS"; break;
-            case STAR: str = "STAR"; break;
-            case SLASH: str = "SLASH"; break;
-            case COMMA: str = "COMMA"; break;
-        }
-        if (type == NUMBER) str += " " + std::to_string(data.num);
-        if (type == IDENTIFIER) str += " " + string(data.id);
+        string str = toktype_to_str(type);
+        if (type == NUMBER) str += " " + std::to_string(std::get<int>(data));
+        if (type == IDENTIFIER) str += " " + std::get<string>(data);
         return str;
     }
 };
@@ -180,19 +182,20 @@ int tokenize(const string& input) {
                     line_no++;
                     col_no = 0;
                 }
-                continue;
             }
-            switch (c) {
-                case '(': tokens.emplace(LBRACKET, line_no, col_no); break;
-                case ')': tokens.emplace(RBRACKET, line_no, col_no); break;
-                case '=': tokens.emplace(EQ, line_no, col_no); break;
-                case '+': tokens.emplace(PLUS, line_no, col_no); break;
-                case '-': tokens.emplace(MINUS, line_no, col_no); break;
-                case ',': tokens.emplace(COMMA, line_no, col_no); break;
-                case '*': tokens.emplace(STAR, line_no, col_no); break;
-                case '/': tokens.emplace(SLASH, line_no, col_no); break;
-                case ';': tokens.emplace(SEMICOLON, line_no, col_no); break;
-                default : return -1;
+            else {
+                switch (c) {
+                    case '(': tokens.emplace(LBRACKET, line_no, col_no); break;
+                    case ')': tokens.emplace(RBRACKET, line_no, col_no); break;
+                    case '=': tokens.emplace(EQ, line_no, col_no); break;
+                    case '+': tokens.emplace(PLUS, line_no, col_no); break;
+                    case '-': tokens.emplace(MINUS, line_no, col_no); break;
+                    case ',': tokens.emplace(COMMA, line_no, col_no); break;
+                    case '*': tokens.emplace(STAR, line_no, col_no); break;
+                    case '/': tokens.emplace(SLASH, line_no, col_no); break;
+                    case ';': tokens.emplace(SEMICOLON, line_no, col_no); break;
+                    default : return -1;
+                }
             }
         }
     }
@@ -210,20 +213,20 @@ bool err_expr_queue_empty() {
     return false;
 }
 
-bool err_token_mismatch(Token expected_tok) {
-    cout << "Parse Error: Expected token " << expected_tok.to_string() << 
+bool err_token_mismatch(TokenType toktype) {
+    cout << "Parse Error: Expected token " << toktype_to_str(toktype) << 
         ", got " << tokens.front().to_string() << " at line " << 
-        tokens.front().line_no << ", col " << tokens.front().col_no;
+        tokens.front().line_no << ", col " << tokens.front().col_no << endl;
     return false;
 }
 
 bool err_msg(string err) {
     if (!tokens.empty()) {
         cout << "Parse Error: " << err << " at line " << 
-            tokens.front().line_no << ", col " << tokens.front().col_no;
+            tokens.front().line_no << ", col " << tokens.front().col_no << endl;
     }
     else {
-        cout << "Parse Error: " << err << " at EOF";
+        cout << "Parse Error: " << err << " at EOF" << endl;
     }
     return false;
 }
@@ -293,7 +296,7 @@ bool parse_func_call_expr() {
     if (peekif(LBRACKET)) {
         pop();
         if (!parse_expr()) return false;
-        if (!popif(RBRACKET)) return err_token_mismatch(Token(RBRACKET));
+        if (!popif(RBRACKET)) return err_token_mismatch(RBRACKET);
     }
     else if (peekif(IDENTIFIER)) {
         Token name = pop().value();
@@ -301,7 +304,7 @@ bool parse_func_call_expr() {
         if (peekif(LBRACKET)) {
             pop();
             unique_ptr<FunctionApplicationExpression> fae = make_unique<FunctionApplicationExpression>();
-            fae->name = name.data.id;
+            fae->name = get<string>(name.data);
             while (!popif(RBRACKET)) {
                 if (!parse_expr()) return false;
                 fae->parameters.push_back(std::move(expr_queue.front()));
@@ -314,11 +317,11 @@ bool parse_func_call_expr() {
             expr_queue.push(std::move(fae));
         }
         else {
-            expr_queue.push(make_unique<Identifier>(name.data.id));
+            expr_queue.push(make_unique<Identifier>(get<string>(name.data)));
         }
     }
     else if (peekif(NUMBER)) {
-        expr_queue.push(make_unique<IntLiteral>(pop().value().data.num));
+        expr_queue.push(make_unique<IntLiteral>(get<int>(pop().value().data)));
     }
     else {
         return err_msg("Expected number, identifier or (, got " + peek()->to_string());
@@ -373,12 +376,14 @@ bool parse_expr() {
 }
 
 bool parse_func_defn() {
-    if (!peekif(IDENTIFIER)) return err_token_mismatch(Token(IDENTIFIER));
-    curr_fd.name = pop().value().data.id;
-    if (!popif(LBRACKET)) return err_token_mismatch(Token(LBRACKET));
+    if (!peekif(IDENTIFIER)) return err_token_mismatch(IDENTIFIER);
+    curr_fd.name = get<string>(pop().value().data);
+    if (!popif(LBRACKET)) return err_token_mismatch(LBRACKET);
     while (!popif(RBRACKET)) {
-        if (!peekif(IDENTIFIER)) return err_token_mismatch(Token(IDENTIFIER));
-        curr_fd.params.push_back(pop().value().data.id);
+        if (!peekif(IDENTIFIER)) {
+            return err_token_mismatch(IDENTIFIER);
+        }
+        curr_fd.params.push_back(get<string>(pop().value().data));
         if (!(popif(COMMA) || peekif(RBRACKET))) {
             return err_msg("Expected token , or ), got " + peek()->to_string());
         }
@@ -389,11 +394,11 @@ bool parse_func_defn() {
 bool parse() {
 
     while (!empty()) {
-        if (!popif(DEF)) return err_token_mismatch(Token(DEF));
+        if (!popif(DEF)) return err_token_mismatch(DEF);
         if (!parse_func_defn()) return false;
-        if (!popif(EQ)) return err_token_mismatch(Token(EQ));
+        if (!popif(EQ)) return err_token_mismatch(EQ);
         if (!parse_expr()) return false;
-        if (!popif(SEMICOLON)) return err_token_mismatch(Token(SEMICOLON));
+        if (!popif(SEMICOLON)) return err_token_mismatch(SEMICOLON);
 
         unique_ptr<Expression> expr = pop_expr().value();
         definitions.emplace_back(curr_fd.name, curr_fd.params, expr);

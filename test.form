@@ -1,2 +1,3 @@
-def foo(a,b,c) = a+b+5+c;
+def bar(k) = 5*k;
+def foo(a,b,c) = a+b*5+bar(2)/c;
 def main() = foo(1,2,3);
