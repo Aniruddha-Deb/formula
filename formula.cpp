@@ -88,7 +88,8 @@ string op2str(Operator op) {
 }
 
 struct ASTNode {
-    virtual string to_string(string pad) {}
+    virtual string to_string(string pad) { return ""; }
+    virtual string code_gen(string pad) { return ""; }
 };
 
 struct Expression : ASTNode {
@@ -112,6 +113,22 @@ struct BinaryExpression : Expression {
                pad + "`- rhs: " + rhs->to_string(pad + "   ");
     }
 
+    string code_gen(string pad) {
+        string opc = "";
+        switch(op) {
+            case ADD: opc = "add"; break;
+            case SUB: opc = "sub"; break;
+            case MUL: opc = "mul"; break;
+            case DIV: opc = "sdiv"; break;
+        }
+        return lhs->code_gen(pad) + "\n" + pad +
+               "str w8, [sp]\n" + pad +
+               "sub sp, sp, #16\n" + pad + 
+               rhs->code_gen(pad) + "\n" + pad + 
+               "ldr w9, [sp, #16]\n" + pad + 
+               opc + " w8, w8, w9\n" + pad + 
+               "add sp, sp, #16";
+    }
 };
 
 struct IntLiteral : Expression {
@@ -122,15 +139,24 @@ struct IntLiteral : Expression {
     string to_string(string pad) {
         return std::to_string(value);
     }
+
+    string code_gen(string pad) {
+        return "mov w8, #" + std::to_string(value);
+    }
 };
 
 struct Identifier : Expression {
     string value;
+    int reg;
 
-    Identifier(string _value) : value(_value) {}
+    Identifier(string _value, int _reg) : value(_value), reg(_reg) {}
 
     string to_string(string pad) {
         return value;
+    }
+
+    string code_gen(string pad) {
+        return "mov w8, w" + std::to_string(reg);
     }
 };
 
@@ -149,6 +175,17 @@ struct FunctionApplicationExpression : Expression {
             ret += "\n" + pad + "`- " + parameters[parameters.size()-1]->to_string(pad + "   ");
         }
         return ret;
+    }
+
+    string code_gen(string pad) {
+        stringstream s;
+        for (int i=0; i<parameters.size(); i++) {
+            unique_ptr<Expression>& expr = parameters[i];
+            s << expr->code_gen(pad) << "\n" << pad;
+            s << "mov w" << i+1 << ", w8\n" << pad;
+        }
+        s << "b _" << name;
+        return s.str();
     }
 };
 
@@ -173,6 +210,13 @@ struct FunctionDefinition : ASTNode {
         else ret += ")";
         ret += "\n" + pad + "`- " + value->to_string(pad + "   ");
         return ret;
+    }
+
+    string code_gen(string pad) {
+        stringstream s;
+        s << "_" << name << ":\n"
+          << "    " + value->code_gen("    ") << "\n    ret\n\n";
+        return s.str();
     }
 };
 
@@ -362,7 +406,16 @@ bool parse_func_call_expr() {
             expr_stack.push(std::move(fae));
         }
         else {
-            expr_stack.push(make_unique<Identifier>(get<string>(name.data)));
+            // get identifier position in variables
+            string symb = get<string>(name.data);
+            int i;
+            for (i=0; i<curr_fd.params.size(); i++) {
+                if (curr_fd.params[i] == symb) break;
+            }
+            if (i == curr_fd.params.size()) {
+                return err_msg("Could not find bound variable " + symb);
+            }
+            expr_stack.push(make_unique<Identifier>(get<string>(name.data), i+1));
         }
     }
     else if (peekif(NUMBER)) {
@@ -449,6 +502,7 @@ bool parse() {
         definitions.emplace_back(curr_fd.name, curr_fd.params, expr);
         curr_fd.params.clear();
     }
+
     return true;
 }
 
@@ -464,10 +518,14 @@ int main(int argc, char** argv) {
     buffer << t.rdbuf();
 
     tokenize(buffer.str());
-    cout << parse() << endl;
+    parse();
+
+    cout << "    .section    __TEXT,__text,regular,pure_instructions" << endl;
+    cout << "    .globl  _main" << endl;
+    cout << "    .p2align    2" << endl;
 
     for (auto& def : definitions) {
-        cout << def.to_string("") << endl;
+        cout << def.code_gen("") << endl;
     }
 
     return 0;
