@@ -18,6 +18,9 @@ enum TokenType {
     RBRACKET,
     SEMICOLON,
     DEF,
+    IF,
+    THEN,
+    ELSE,
     EQ,
     PLUS,
     MINUS,
@@ -160,6 +163,41 @@ struct Identifier : Expression {
     }
 };
 
+struct IfThenElseExpression : Expression {
+    unique_ptr<Expression> cond_expr;
+    unique_ptr<Expression> if_expr;
+    unique_ptr<Expression> else_expr;
+
+    IfThenElseExpression(unique_ptr<Expression>& _cond_expr, unique_ptr<Expression>& _if_expr):
+        cond_expr{std::move(_cond_expr)},
+        if_expr{std::move(_if_expr)},
+        else_expr{nullptr} {}
+
+    IfThenElseExpression(unique_ptr<Expression>& _cond_expr, unique_ptr<Expression>& _if_expr, unique_ptr<Expression>& _else_expr):
+        cond_expr{std::move(_cond_expr)},
+        if_expr{std::move(_if_expr)},
+        else_expr{std::move(_else_expr)} {}
+
+    string to_string(string pad) {
+        if (else_expr.get() == nullptr) {
+            return "if\n" + 
+                   pad + "`- cond: " + cond_expr->to_string(pad + "|  ") + "\n" +
+                   pad + "`- then: " + if_expr->to_string(pad + "   ");
+        }
+        else {
+            return "if\n" + 
+                   pad + "`- cond: " + cond_expr->to_string(pad + "|  ") + "\n" +
+                   pad + "`- then: " + if_expr->to_string(pad + "|  ") + "\n" +
+                   pad + "`- else: " + else_expr->to_string(pad + "   ");
+        }
+    }
+
+    // TODO
+    string code_gen(string pad) {
+        return "TODO";
+    }
+};
+
 struct FunctionApplicationExpression : Expression {
     string name;
     vector<unique_ptr<Expression>> parameters;
@@ -177,14 +215,6 @@ struct FunctionApplicationExpression : Expression {
         return ret;
     }
 
-    /*
-     * sub sp, sp, #16
-     * stp	x29, x30, [sp]
-     * mov w0, #5
-     * bl _func
-     * ldp	x29, x30, [sp]
-     * add sp, sp, #16
-     */
     string code_gen(string pad) {
         stringstream s;
         s << "sub sp, sp, #16\n" << pad 
@@ -272,6 +302,15 @@ int tokenize(const string& input) {
                 if (id == "def") {
                     tokens.emplace(DEF, line_no, col_no);
                 }
+                else if (id == "if") {
+                    tokens.emplace(IF, line_no, col_no);
+                }
+                else if (id == "then") {
+                    tokens.emplace(THEN, line_no, col_no);
+                }
+                else if (id == "else") {
+                    tokens.emplace(ELSE, line_no, col_no);
+                }
                 else if (tok_is_number) {
                     tokens.emplace(NUMBER, stoi(id), line_no, col_no);
                 }
@@ -299,7 +338,7 @@ int tokenize(const string& input) {
                     case '*': tokens.emplace(STAR, line_no, col_no); break;
                     case '/': tokens.emplace(SLASH, line_no, col_no); break;
                     case ';': tokens.emplace(SEMICOLON, line_no, col_no); break;
-                    default : return -1;
+                    default : cout << "Lex Error: Bad Token at line " << line_no << ", col " << col_no << endl; return -1;
                 }
             }
         }
@@ -448,7 +487,7 @@ bool parse_mul_div_expr() {
 
     if (empty()) return err_stack_empty();
 
-    if (peekif(RBRACKET) || peekif(SEMICOLON) || peekif(COMMA) || peekif(PLUS) || peekif(MINUS)) {
+    if (peekif(RBRACKET) || peekif(SEMICOLON) || peekif(COMMA) || peekif(PLUS) || peekif(MINUS) || peekif(THEN)) {
         // do nothing
     }
     else if (peekif(STAR) || peekif(SLASH)) {
@@ -465,13 +504,13 @@ bool parse_mul_div_expr() {
     return true;
 }
 
-bool parse_expr() {
+bool parse_add_sub_expr() {
 
     if (!parse_mul_div_expr()) return false;
 
     if (empty()) return err_stack_empty();
 
-    if (peekif(RBRACKET) || peekif(SEMICOLON) || peekif(COMMA)) {
+    if (peekif(RBRACKET) || peekif(SEMICOLON) || peekif(COMMA) || peekif(THEN)) {
         // do nothing
     }
     else if (peekif(PLUS) || peekif(MINUS)) {
@@ -486,6 +525,22 @@ bool parse_expr() {
     }
 
     return true;
+}
+
+bool parse_expr() {
+
+    if (!peekif(IF)) return parse_add_sub_expr();
+
+    popif(IF);
+    if (!parse_add_sub_expr()) return err_msg("If statement condition missing");
+    unique_ptr<Expression> cond = pop_expr().value();
+    if (!popif(THEN)) return err_msg("Expected then");
+    if (!parse_add_sub_expr()) return err_msg("If statement true branch missing");
+    unique_ptr<Expression> if_expr = pop_expr().value();
+    if (!peekif(ELSE)) return IfThenElseExpression(
+
+    if (empty()) return err_st
+
 }
 
 bool parse_func_defn() {
