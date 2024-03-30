@@ -43,6 +43,9 @@ string toktype_to_str(TokenType type) {
         case STAR: return "*";
         case SLASH: return "/";
         case COMMA: return ";";
+        case IF: return "if";
+        case THEN: return "then";
+        case ELSE: return "else";
     }
 }
 
@@ -258,9 +261,22 @@ struct FunctionDefinition : ASTNode {
         stringstream s;
         s << "    .globl _" << name << "\n    .p2align 2\n"
           << "_" << name << ":\n"
-          << "    " << value->code_gen("    ") << "\n"
+          << "    " << value->code_gen("    ") << "\n";
           // << "    " << "mov w0, w8\n"
-          << "    " << "ret\n";
+        if (name == "main") {
+            // print the result of main (value in w8) by branching to _printf
+            s << "    sub sp, sp, #32\n"
+              << "    stp x29, x30, [sp, #16]\n"
+              << "    add x29, sp, #16\n"
+              << "    str x8, [sp]\n"
+              << "    adrp x0, out_.str@PAGE\n"
+              << "    add x0, x0, out_.str@PAGEOFF\n"
+              << "    bl _printf\n"
+              << "    ldp x29, x30, [sp, #16]\n"
+              << "    add sp, sp, #32\n";
+        }
+
+        s << "    " << "ret\n";
         return s.str();
     }
 };
@@ -531,15 +547,21 @@ bool parse_expr() {
 
     if (!peekif(IF)) return parse_add_sub_expr();
 
-    popif(IF);
+    pop(); // pop if
     if (!parse_add_sub_expr()) return err_msg("If statement condition missing");
     unique_ptr<Expression> cond = pop_expr().value();
     if (!popif(THEN)) return err_msg("Expected then");
     if (!parse_add_sub_expr()) return err_msg("If statement true branch missing");
     unique_ptr<Expression> if_expr = pop_expr().value();
-    if (!peekif(ELSE)) return IfThenElseExpression(
-
-    if (empty()) return err_st
+    if (!peekif(ELSE)) {
+        expr_stack.push(make_unique<IfThenElseExpression>(cond, if_expr));
+        return true;
+    }
+    pop(); // pop else
+    if (!parse_add_sub_expr()) return err_msg("If statement false branch missing");
+    unique_ptr<Expression> else_expr = pop_expr().value();
+    expr_stack.push(make_unique<IfThenElseExpression>(cond, if_expr, else_expr));
+    return true;
 
 }
 
@@ -595,6 +617,12 @@ int main(int argc, char** argv) {
     for (auto& def : definitions) {
         cout << def.code_gen("") << endl;
     }
+
+    // main would be the last function to be generated
+    cout << endl;
+    cout << "    .section    __TEXT,__cstring,cstring_literals" << endl;
+    cout << "out_.str:" << endl;
+    cout << "    .asciz \"%d\\n\"" << endl;
 
     return 0;
 
