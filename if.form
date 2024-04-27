@@ -1,0 +1,2 @@
+def fib(x) = if x = 1 then 0 else fib(x-1);
+def main() = fib(3);

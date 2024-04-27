@@ -11,6 +11,8 @@
 #include <sstream>
 using namespace std;
 
+int if_lbl_ctr = 0;
+
 enum TokenType {
     NUMBER,
     IDENTIFIER,
@@ -81,7 +83,7 @@ struct Token {
 };
 
 enum Operator {
-    ADD, SUB, MUL, DIV
+    ADD, SUB, MUL, DIV, EQUAL
 };
 
 string op2str(Operator op) {
@@ -90,6 +92,7 @@ string op2str(Operator op) {
         case SUB: return "SUB";
         case MUL: return "MUL";
         case DIV: return "DIV";
+        case EQUAL: return "EQUAL";
     }
 }
 
@@ -126,14 +129,18 @@ struct BinaryExpression : Expression {
             case SUB: opc = "sub"; break;
             case MUL: opc = "mul"; break;
             case DIV: opc = "sdiv"; break;
+            case EQUAL: opc = "cmp"; break;
         }
-        return lhs->code_gen(pad) + "\n" + pad +
-               "str w8, [sp]\n" + pad +
-               "sub sp, sp, #16\n" + pad + 
-               rhs->code_gen(pad) + "\n" + pad + 
-               "ldr w9, [sp, #16]\n" + pad + 
-               opc + " w8, w8, w9\n" + pad + 
-               "add sp, sp, #16";
+        stringstream s;
+        s << lhs->code_gen(pad) << "\n" << pad;
+        s << "str w8, [sp]\n" << pad; 
+        s << "sub sp, sp, #16\n" << pad;
+        s << rhs->code_gen(pad) << "\n" << pad;
+        s << "ldr w9, [sp, #16]\n" << pad;
+        if (op == EQUAL) s << "cmp w8, w9\n" << pad;
+        else s << opc << " w8, w8, w9\n" << pad;
+        s << "add sp, sp, #16";
+        return s.str();
     }
 };
 
@@ -197,7 +204,17 @@ struct IfThenElseExpression : Expression {
 
     // TODO
     string code_gen(string pad) {
-        return "TODO";
+        if_lbl_ctr += 1;
+        stringstream s;
+        s << cond_expr->code_gen(pad) << "\n" << pad; // cond expr HAS to be eq
+        s << "beq true_lbl_" << if_lbl_ctr << "\n" << pad;
+        s << else_expr->code_gen(pad) << "\n" << pad;
+        s << "b end_if_" << if_lbl_ctr << "\n";
+        s << "true_lbl_" << if_lbl_ctr << ":\n" << pad;
+        s << if_expr->code_gen(pad) << "\n";
+        s << "end_if_" << if_lbl_ctr << ":\n";
+        if_lbl_ctr -= 1;
+        return s.str();
     }
 };
 
@@ -489,7 +506,8 @@ bool parse_func_call_expr() {
         }
     }
     else if (peekif(NUMBER)) {
-        expr_stack.push(make_unique<IntLiteral>(get<int>(pop().value().data)));
+        int data = get<int>(pop().value().data);
+        expr_stack.push(make_unique<IntLiteral>(data));
     }
     else {
         return err_msg("Expected number, identifier or (, got " + peek()->to_string());
@@ -503,7 +521,7 @@ bool parse_mul_div_expr() {
 
     if (empty()) return err_stack_empty();
 
-    if (peekif(RBRACKET) || peekif(SEMICOLON) || peekif(COMMA) || peekif(PLUS) || peekif(MINUS) || peekif(THEN)) {
+    if (peekif(RBRACKET) || peekif(SEMICOLON) || peekif(COMMA) || peekif(PLUS) || peekif(MINUS) || peekif(THEN) || peekif(ELSE) || peekif(EQ)) {
         // do nothing
     }
     else if (peekif(STAR) || peekif(SLASH)) {
@@ -526,7 +544,7 @@ bool parse_add_sub_expr() {
 
     if (empty()) return err_stack_empty();
 
-    if (peekif(RBRACKET) || peekif(SEMICOLON) || peekif(COMMA) || peekif(THEN)) {
+    if (peekif(RBRACKET) || peekif(SEMICOLON) || peekif(COMMA) || peekif(THEN) || peekif(ELSE) || peekif(EQ)) {
         // do nothing
     }
     else if (peekif(PLUS) || peekif(MINUS)) {
@@ -543,22 +561,46 @@ bool parse_add_sub_expr() {
     return true;
 }
 
+bool parse_eq_expr() {
+
+    if (!parse_add_sub_expr()) return false;
+
+    if (empty()) return err_stack_empty();
+
+    if (peekif(RBRACKET) || peekif(SEMICOLON) || peekif(COMMA) || peekif(ELSE) || peekif(THEN)) {
+        // do nothing
+    }
+    else if (peekif(EQ)) {
+        pop();
+        Operator op = EQUAL;
+        if (!parse_expr()) return false;
+        unique_ptr<Expression> e1 = pop_expr().value();
+        unique_ptr<Expression> e2 = pop_expr().value();
+        expr_stack.push(make_unique<BinaryExpression>(e2, op, e1));
+    }
+    else {
+        return err_msg("Expected ),;,,,= got " + peek()->to_string());
+    }
+
+    return true;
+}
+
 bool parse_expr() {
 
-    if (!peekif(IF)) return parse_add_sub_expr();
+    if (!peekif(IF)) return parse_eq_expr();
 
     pop(); // pop if
-    if (!parse_add_sub_expr()) return err_msg("If statement condition missing");
+    if (!parse_eq_expr()) return err_msg("If statement condition missing");
     unique_ptr<Expression> cond = pop_expr().value();
     if (!popif(THEN)) return err_msg("Expected then");
-    if (!parse_add_sub_expr()) return err_msg("If statement true branch missing");
+    if (!parse_expr()) return err_msg("If statement true branch missing");
     unique_ptr<Expression> if_expr = pop_expr().value();
     if (!peekif(ELSE)) {
         expr_stack.push(make_unique<IfThenElseExpression>(cond, if_expr));
         return true;
     }
     pop(); // pop else
-    if (!parse_add_sub_expr()) return err_msg("If statement false branch missing");
+    if (!parse_expr()) return err_msg("If statement false branch missing");
     unique_ptr<Expression> else_expr = pop_expr().value();
     expr_stack.push(make_unique<IfThenElseExpression>(cond, if_expr, else_expr));
     return true;
