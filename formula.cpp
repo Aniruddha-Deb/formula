@@ -137,8 +137,8 @@ struct BinaryExpression : Expression {
         s << "sub sp, sp, #16\n" << pad;
         s << rhs->code_gen(pad) << "\n" << pad;
         s << "ldr w9, [sp, #16]\n" << pad;
-        if (op == EQUAL) s << "cmp w8, w9\n" << pad;
-        else s << opc << " w8, w8, w9\n" << pad;
+        if (op == EQUAL) s << "cmp w9, w8\n" << pad;
+        else s << opc << " w8, w9, w8\n" << pad;
         s << "add sp, sp, #16";
         return s.str();
     }
@@ -238,6 +238,7 @@ struct FunctionApplicationExpression : Expression {
     string code_gen(string pad) {
         stringstream s;
         s << "sub sp, sp, #16\n" << pad 
+            // TODO push/pop args from stack
           << "stp x29, x30, [sp]\n" << pad;
         for (int i=0; i<parameters.size(); i++) {
             unique_ptr<Expression>& expr = parameters[i];

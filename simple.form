@@ -1,2 +1,2 @@
 def fn(a) = a+2;
-def main() = fn(3);
+def main() = fn(4);
