@@ -237,9 +237,12 @@ struct FunctionApplicationExpression : Expression {
 
     string code_gen(string pad) {
         stringstream s;
-        s << "sub sp, sp, #16\n" << pad 
+        s << "sub sp, sp, #32\n" << pad 
             // TODO push/pop args from stack
-          << "stp x29, x30, [sp]\n" << pad;
+            // for now, save/restore the first 4 registers only
+          << "stp x29, x30, [sp]\n" << pad
+          << "stp w1, w2, [sp, #16]\n" << pad
+          << "stp w3, w4, [sp, #24]\n" << pad;
         for (int i=0; i<parameters.size(); i++) {
             unique_ptr<Expression>& expr = parameters[i];
             s << expr->code_gen(pad) << "\n" << pad;
@@ -247,7 +250,9 @@ struct FunctionApplicationExpression : Expression {
         }
         s << "bl _" << name << "\n" << pad;
         s << "ldp x29, x30, [sp]\n" << pad
-          << "add sp, sp, #16";
+          << "ldp w1, w2, [sp, #16]\n" << pad
+          << "ldp w3, w4, [sp, #24]\n" << pad
+          << "add sp, sp, #32";
         return s.str();
     }
 };
